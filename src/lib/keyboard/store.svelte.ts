@@ -1,5 +1,5 @@
 import { SvelteMap } from 'svelte/reactivity';
-import { SerialTransport } from '$lib/serial/transport';
+import { SerialTransport } from '$lib/serial/transport.svelte';
 import { HEBallCmd } from '$lib/serial/commands';
 import type { KeyThreshold, KeyADCData } from './types';
 import { globalColToLocalIndex } from './layout';
