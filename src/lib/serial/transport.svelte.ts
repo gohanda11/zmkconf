@@ -19,39 +19,64 @@ export class SerialTransport {
   connected = $state(false);
   lastError = $state<string | null>(null);
 
+  private readLoopPromise: Promise<void> | null = null;
+  private disconnecting = false;
+
   async connect(): Promise<void> {
     if (!('serial' in navigator)) {
       throw new Error('WebSerial API not supported. Use Chrome or Edge.');
     }
-    this.port = await navigator.serial!.requestPort({
+    if (this.port) await this.disconnect();
+    this.lastError = null;
+    const port = await navigator.serial!.requestPort({
       filters: [{ usbVendorId: 0x1D50, usbProductId: 0x615E }]
     });
-    await this.port!.open({ baudRate: 115200 });
-    this.writer = this.port!.writable!.getWriter();
-    this.reader = this.port!.readable!.getReader();
+    await port.open({ baudRate: 115200 });
+    this.port = port;
+    this.writer = port.writable!.getWriter();
+    this.reader = port.readable!.getReader();
     this.connected = true;
-    this.startReadLoop();
+    this.readLoopPromise = this.startReadLoop();
   }
 
   async disconnect(): Promise<void> {
+    if (this.disconnecting) return;
+    this.disconnecting = true;
     this.connected = false;
     this.pendingCommands.forEach(p => {
       clearTimeout(p.timer);
       p.reject(new Error('Disconnected'));
     });
     this.pendingCommands.clear();
-    try { this.reader?.cancel(); } catch { /* ignore */ }
-    try { this.writer?.close(); } catch { /* ignore */ }
-    try { await this.port?.close(); } catch { /* ignore */ }
-    this.port = null;
+
+    // Capture refs and null them to prevent reuse
+    const reader = this.reader;
+    const writer = this.writer;
+    const port = this.port;
+    const readLoop = this.readLoopPromise;
     this.reader = null;
     this.writer = null;
+    this.port = null;
+    this.readLoopPromise = null;
+
+    // Cancel the read stream, then wait for startReadLoop to exit
+    try { await reader?.cancel(); } catch { /* ignore */ }
+    try { await readLoop; } catch { /* ignore */ }
+    // Safe to release lock after startReadLoop has exited
+    try { reader?.releaseLock(); } catch { /* ignore */ }
+
+    try { await writer?.close(); } catch { /* ignore */ }
+    try { await port?.close(); } catch { /* ignore */ }
+
+    this.disconnecting = false;
   }
 
   private async startReadLoop(): Promise<void> {
+    const reader = this.reader;
+    if (!reader) return;
     try {
-      while (this.reader) {
-        const { value, done } = await this.reader.read();
+      while (true) {
+        const { value, done } = await reader.read();
         if (done) break;
         if (value) {
           for (const byte of value) {
@@ -61,12 +86,13 @@ export class SerialTransport {
         }
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      this.lastError = `Read error: ${msg}`;
-      if (this.connected) this.disconnect();
-    } finally {
-      if (this.connected) this.disconnect();
+      if (this.connected) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.lastError = `Read error: ${msg}`;
+      }
     }
+    // Unexpected disconnect (e.g. USB unplugged) — fire-and-forget cleanup
+    if (this.connected) void this.disconnect();
   }
 
   private handleFrame(frame: Uint8Array): void {

@@ -13,11 +13,20 @@
     onSetThreshold: (press: number, release: number) => void;
   } = $props();
 
-  let pressVal = $derived(threshold?.press ?? 60);
-  let releaseVal = $derived(threshold?.release ?? 30);
+  // Use $state so sliders remain responsive while $effect syncs from firmware
+  let pressVal = $state(threshold?.press ?? 60);
+  let releaseVal = $state(threshold?.release ?? 30);
+
+  $effect(() => {
+    if (threshold) {
+      pressVal = threshold.press;
+      // Clamp release to always be below press
+      releaseVal = Math.min(threshold.release, threshold.press - 1);
+    }
+  });
 </script>
 
-{#if selectedKey && threshold}
+{#if selectedKey}
   <div class="bg-gray-800 rounded-lg p-4 space-y-3">
     <h3 class="text-white font-medium">Key col={selectedKey.col}</h3>
 
@@ -29,7 +38,11 @@
           class="w-full accent-blue-500"
           oninput={(e) => {
             const p = parseInt((e.target as HTMLInputElement).value);
-            if (p > releaseVal) onSetThreshold(p, releaseVal);
+            pressVal = p;
+            // Auto-clamp release to maintain press > release invariant
+            const r = Math.min(releaseVal, p - 1);
+            releaseVal = r;
+            onSetThreshold(p, r);
           }}
         />
       </label>
@@ -39,11 +52,15 @@
       <label class="text-gray-400 text-sm">
         Release Threshold: {releaseVal}
         <input
-          type="range" min="1" max="255" value={releaseVal}
+          type="range" min="0" max="254" value={releaseVal}
           class="w-full accent-blue-300"
           oninput={(e) => {
             const r = parseInt((e.target as HTMLInputElement).value);
-            if (r < pressVal) onSetThreshold(pressVal, r);
+            releaseVal = r;
+            // Auto-clamp press to maintain press > release invariant
+            const p = Math.max(pressVal, r + 1);
+            pressVal = p;
+            onSetThreshold(p, r);
           }}
         />
       </label>
@@ -62,7 +79,5 @@
 {:else}
   <div class="bg-gray-800 rounded-lg p-4 text-gray-500 text-sm">
     Select a key on the keyboard to configure its threshold.
-    <br>
-    <span class="text-xs">(Right half keys only in Phase 3)</span>
   </div>
 {/if}

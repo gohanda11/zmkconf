@@ -59,7 +59,7 @@
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-bold">HEball Configurator</h1>
     <span class="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded">
-      Phase 3 — Right half only
+      HEball Configurator
     </span>
   </div>
 
