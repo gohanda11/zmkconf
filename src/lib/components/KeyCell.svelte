@@ -17,7 +17,7 @@
   } = $props();
 
   const loc = $derived(globalColToLocalIndex(key.col));
-  const isConfigurable = $derived(loc?.half === 'right');
+  const isConfigurable = $derived(loc !== null);
 
   function thresholdColor(t?: KeyThreshold) {
     if (!t) return 'bg-gray-700';
